@@ -39,6 +39,7 @@ import tempfile
 import textwrap
 import time
 import warnings
+import copy
 from datetime import datetime
 from optparse import OptionParser
 from sys import stderr
@@ -787,9 +788,34 @@ def get_existing_cluster(conn, opts, cluster_name, die_on_error=True):
     return (master_instances, slave_instances)
 
 
+def pre_setup(master_nodes, slave_nodes, opts):
+
+    ubuntu_opts = copy.copy(opts)
+    ubuntu_opts.user = "ubuntu"
+    copy_key = """sudo cp /home/ubuntu/.ssh/authorized_keys /root/.ssh/"""
+    install_deps = """apt-get install git rsync -y"""
+    install_java = """apt-get install software-properties-common -y && \
+                        add-apt-repository ppa:webupd8team/java -y && \
+                        apt-get update -y && \
+                        apt-get install debconf-utils && \
+                        echo "oracle-java8-installer shared/accepted-oracle-license-v1-1 select true" | sudo debconf-set-selections && \
+                        apt-get install -y oracle-java8-installer && \
+                        echo "export JAVA_HOME=/usr/lib/jvm/java-8-oracle" >> /root/.bashrc && \
+                        echo "export JAVA_HOME=/usr/lib/jvm/java-8-oracle" >> /root/.bash_profile"""
+
+    all_nodes = master_nodes + slave_nodes
+
+    for node in all_nodes:
+        hostname = get_dns_name(node, opts.private_ips)
+        ssh(hostname, ubuntu_opts, copy_key)
+        ssh(hostname, opts, install_deps)
+        ssh(hostname, opts, install_java)
+
+
 # Deploy configuration files and run setup scripts on a newly launched
 # or started EC2 cluster.
 def setup_cluster(conn, master_nodes, slave_nodes, opts, deploy_ssh_key):
+    pre_setup(master_nodes, slave_nodes, opts)
     master = get_dns_name(master_nodes[0], opts.private_ips)
     if deploy_ssh_key:
         print("Generating cluster's SSH key on master...")
